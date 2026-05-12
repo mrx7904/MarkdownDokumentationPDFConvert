@@ -3,8 +3,8 @@ title:   Data Engineering Pipeline
 author:  Max Mustermann
 subject: Data Engineering / ETL-Architektur
 version: v1.0
-date:    12. April 2026
-company: Max Mustermann GmbH · Datenmanagement
+date:    12. Mai 2026
+company: Alsco Berufskleidungs-Service GmbH · Datenmanagement
 toc:     true
 ---
 
