@@ -1,1 +1,2 @@
 reportlab
+svglib==1.4.1

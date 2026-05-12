@@ -47,6 +47,29 @@ except ImportError:
     print("Installieren mit:  pip install reportlab")
     sys.exit(1)
 
+try:
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPDF as _renderPDF
+    _SVGLIB_OK = True
+except ImportError:
+    _SVGLIB_OK = False
+
+LOGO_PATH = Path(__file__).parent / "alsco_logo 1.svg"
+
+
+def _draw_logo(canvas, x, y, width):
+    """Draw the Alsco SVG logo onto canvas at (x, y) scaled to the given width."""
+    if not _SVGLIB_OK or not LOGO_PATH.exists():
+        return
+    drawing = svg2rlg(str(LOGO_PATH))
+    if drawing is None or drawing.width == 0:
+        return
+    scale = width / drawing.width
+    drawing.width  = width
+    drawing.height = drawing.height * scale
+    drawing.transform = (scale, 0, 0, scale, 0, 0)
+    _renderPDF.draw(drawing, canvas, x, y)
+
 
 # ─────────────────────────────────────────────────────────────────
 # PALETTE
@@ -321,6 +344,10 @@ class Cover(Flowable):
         # Left accent bar
         c.setFillColor(C_RULE)
         c.rect(0, h * 0.25, 2, h * 0.55, fill=1, stroke=0)
+        # Logo oben rechts
+        logo_w = 3.8 * cm
+        logo_h = logo_w * (74 / 241)
+        _draw_logo(c, self.width - logo_w, h - logo_h - 0.3 * cm, logo_w)
 
         # Title (wrap if needed)
         title = self.title
@@ -545,14 +572,16 @@ class TocDocTemplate(BaseDocTemplate):
 # ─────────────────────────────────────────────────────────────────
 # HEADER / FOOTER
 # ─────────────────────────────────────────────────────────────────
-def make_hf(header_left, header_right="", footer_left="", footer_right=""):
+def make_hf(header_left, header_right="", footer_left="", footer_right="", skip_first=False):
     """
     header_left  – Kopfzeile links:  Thema / Dokumenttitel (Navigation)
     header_right – Kopfzeile rechts: Autor · Version
     footer_left  – Fußzeile links:   Datum
     footer_right – Fußzeile rechts:  Firma
+    skip_first   – Seite 1 (Deckblatt) ohne Kopf-/Fußzeile
     """
     def hf(canvas, doc):
+        is_cover = skip_first and doc.page == 1
         canvas.saveState()
         w, h = A4
         canvas.setStrokeColor(C_RULE)
@@ -560,15 +589,20 @@ def make_hf(header_left, header_right="", footer_left="", footer_right=""):
         canvas.setFillColor(C_MUTED)
         canvas.setFont("Helvetica", 7.5)
         # ── Kopfzeile ───────────────────────────────────────────
+        logo_w = 2.0 * cm
+        if not is_cover:
+            _draw_logo(canvas, w - M - logo_w, h - 1.05*cm, logo_w)
         canvas.line(M, h - 1.1*cm, w - M, h - 1.1*cm)
         canvas.drawString(M, h - 0.85*cm, header_left)
         if header_right:
-            canvas.drawRightString(w - M, h - 0.85*cm, header_right)
+            right_x = w - M - (logo_w + 0.2*cm if not is_cover else 0)
+            canvas.drawRightString(right_x, h - 0.85*cm, header_right)
         # ── Fußzeile ────────────────────────────────────────────
         canvas.line(M, 1.1*cm, w - M, 1.1*cm)
         if footer_left:
             canvas.drawString(M, 0.7*cm, footer_left)
-        canvas.drawCentredString(w / 2, 0.7*cm, f"– {doc.page} –")
+        if not is_cover:
+            canvas.drawCentredString(w / 2, 0.7*cm, f"– {doc.page} –")
         if footer_right:
             canvas.drawRightString(w - M, 0.7*cm, footer_right)
         canvas.restoreState()
@@ -945,7 +979,7 @@ def convert(md_path, pdf_path, title=None, author=None, subject=None,
         story.append(PageBreak())
     story.extend(body_story)
 
-    hf = make_hf(hl, hr, fr, company or "")
+    hf = make_hf(hl, hr, fr, company or "", skip_first=cover)
 
     doc_kwargs = dict(
         pagesize=A4,
