@@ -614,17 +614,21 @@ def make_hf(header_left, header_right="", footer_left="", footer_right="", skip_
 # ─────────────────────────────────────────────────────────────────
 def inline_md(text):
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Protect inline-code spans from later emphasis/link regex passes.
+    code_spans = []
+
+    def _stash_code(match):
+        code_spans.append(match.group(1))
+        return f"%%CODE{len(code_spans) - 1}%%"
+
+    text = re.sub(r'`([^`]+?)`', _stash_code, text)
     # Bold + italic
     text = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', text)
     # Bold
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
     # Italic
-    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-    text = re.sub(r'_(.+?)_',   r'<i>\1</i>', text)
-    # Inline code
-    text = re.sub(
-        r'`(.+?)`',
-        r'<font face="Courier" size="8" color="#444444">\1</font>', text)
+    text = re.sub(r'(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)', r'<i>\1</i>', text)
+    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)',     r'<i>\1</i>', text)
     # Links [text](url)
     text = re.sub(
         r'\[([^\]]+)\]\(([^)]+)\)',
@@ -637,6 +641,13 @@ def inline_md(text):
         lambda m: (f'<link href="{m.group(1)}">'
                    f'<u><font color="#2563ab">{m.group(1)}</font></u></link>'),
         text)
+
+    # Restore protected inline-code spans.
+    for idx, code_text in enumerate(code_spans):
+        text = text.replace(
+            f"%%CODE{idx}%%",
+            f'<font face="Courier" size="8" color="#444444">{code_text}</font>'
+        )
     return text
 
 
