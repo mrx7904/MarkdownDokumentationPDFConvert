@@ -42,10 +42,75 @@ try:
     from reportlab.platypus import Flowable
     from reportlab.platypus.tableofcontents import TableOfContents
     from reportlab.lib.sequencer import getSequencer
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
 except ImportError:
     print("Fehler: reportlab ist nicht installiert.")
     print("Installieren mit:  pip install reportlab")
     sys.exit(1)
+
+
+# ─────────────────────────────────────────────────────────────────
+# FONTS
+# ─────────────────────────────────────────────────────────────────
+# The built-in Type1 fonts (Helvetica/Courier) only cover the WinAnsi
+# character set. Anything outside it – box drawing (─ │ ├ └), arrows (→),
+# checkmarks, … – renders as a .notdef "black box". To avoid that we register
+# Unicode-capable TrueType fonts *under the standard font names* so the rest of
+# the code keeps working unchanged. If no suitable TTF is found (e.g. a
+# non-Windows host without DejaVu) we silently keep the Type1 fallback.
+_FONTS_REGISTERED = False
+
+
+def _register_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    import os
+
+    search_dirs = [
+        os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"),
+        "/usr/share/fonts/truetype/dejavu", "/usr/share/fonts",
+        "/Library/Fonts", os.path.expanduser("~/.fonts"),
+    ]
+
+    def find(*names):
+        for d in search_dirs:
+            for n in names:
+                p = os.path.join(d, n)
+                if os.path.isfile(p):
+                    return p
+        return None
+
+    # DejaVu (best coverage, cross-platform) is preferred; Arial/Consolas are the
+    # Windows fallback. Both cover box drawing, arrows, umlauts and dashes.
+    body = {
+        "Helvetica":         find("DejaVuSans.ttf", "arial.ttf"),
+        "Helvetica-Bold":    find("DejaVuSans-Bold.ttf", "arialbd.ttf"),
+        "Helvetica-Oblique": find("DejaVuSans-Oblique.ttf", "ariali.ttf"),
+    }
+    mono = find("DejaVuSansMono.ttf", "consola.ttf", "cour.ttf")
+
+    if body["Helvetica"]:
+        regular = body["Helvetica"]
+        for name in ("Helvetica", "Helvetica-Bold", "Helvetica-Oblique"):
+            try:
+                # Fall back to the regular face if a bold/italic file is missing,
+                # so bold/italic text never drops back to the Type1 (black-box) font.
+                pdfmetrics.registerFont(TTFont(name, body[name] or regular))
+            except Exception:
+                pass
+        pdfmetrics.registerFontFamily(
+            "Helvetica", normal="Helvetica", bold="Helvetica-Bold",
+            italic="Helvetica-Oblique", boldItalic="Helvetica-Bold",
+        )
+    if mono:
+        try:
+            pdfmetrics.registerFont(TTFont("Courier", mono))
+        except Exception:
+            pass
+
+    _FONTS_REGISTERED = True
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -893,6 +958,7 @@ def convert(md_path, pdf_path, title=None, author=None, subject=None,
             date_str=None, version=None, cover=True, include_toc=False,
             header_left=None, company=None):
 
+    _register_fonts()
     md_text = Path(md_path).read_text(encoding="utf-8")
     styles  = make_styles()
 
@@ -970,6 +1036,14 @@ def convert(md_path, pdf_path, title=None, author=None, subject=None,
 # CLI
 # ─────────────────────────────────────────────────────────────────
 def main():
+    # Ensure console output (which uses ✓/✗ and umlauts) doesn't crash on a
+    # legacy-codepage stdout, e.g. Windows cp1252.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description="Markdown → PDF Konverter für technische Dokumentation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
